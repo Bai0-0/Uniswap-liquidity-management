@@ -18,7 +18,6 @@ class Swap:
         self.alpha = alpha
         self.beta = beta
 
-
 class RangeOrder:
     '''range order placed into v3 pool'''
 
@@ -67,6 +66,28 @@ class RangeOrder:
         self.cal_liquidity()
         return self.reserve
 
+    def cal_swap(self, old_price: Dec, new_price: Dec) -> Swap:
+        '''
+        only one kind of token is counted into swap for every price change, if new_price > old_price
+        then beta is withdrawn
+        '''
+        if new_price < old_price:
+            if old_price <= self.price_low:
+                return Swap(alpha=Dec(0.))
+            new_price = max(new_price, self.price_low)
+            swap_alpha = self.reserve.alpha * (Dec(1.) / Dec.sqrt(new_price) - Dec(1.) / Dec.sqrt(old_price)) / (Dec(1.) / Dec.sqrt(self.price_low) - Dec(1.) / Dec.sqrt(self.price_high))
+            assert swap_alpha >= -0.1, str(swap_alpha)
+            swap_alpha = max(swap_alpha, Dec(0.))
+            return Swap(alpha=swap_alpha)
+        else:
+            if old_price >= self.price_high:
+                return Swap(beta=Dec(0.))
+            new_price = min(new_price, self.price_high)
+            swap_beta = self.reserve.beta * (Dec.sqrt(new_price) - Dec.sqrt(old_price)) / (Dec.sqrt(self.price_high) - Dec.sqrt(self.price_low))
+            assert swap_beta >= -0.1, str(swap_beta)
+            swap_beta = max(swap_beta, Dec(0.))
+            return Swap(beta=swap_beta)
+
     def meet_swap(self, swap: Swap) -> tuple:
         '''
         things to do if swap happens in this order
@@ -76,13 +97,12 @@ class RangeOrder:
         if swap.alpha == None:  # now the swap is going to withdraw beta out
             beta_to_withdraw = min(swap.beta, self.reserve.beta)
             self.reserve.beta -= beta_to_withdraw
-            self.reserve.alpha = min(self.liquidity * self.liquidity / (self.reserve.beta + self.liquidity * Dec.sqrt(self.price_low)) - self.liquidity / Dec.sqrt(self.price_high), Dec(21))
+            self.reserve.alpha += beta_to_withdraw * self.current_price
             self.transaction_fee.beta += beta_to_withdraw * self.fee_rate
         elif swap.beta == None:  # the swap is going to withdraw alpha out
             alpha_to_withdraw = min(swap.alpha, self.reserve.alpha)
             self.reserve.alpha -= alpha_to_withdraw
-            self.reserve.beta = min(self.liquidity * self.liquidity / (
-                        self.reserve.alpha + self.liquidity / Dec.sqrt(self.price_high)) - self.liquidity * Dec.sqrt(self.price_low), 21)
+            self.reserve.beta += alpha_to_withdraw / self.current_price
             self.transaction_fee.alpha += alpha_to_withdraw * self.fee_rate
         self.update_wealth()
         return self.reserve
