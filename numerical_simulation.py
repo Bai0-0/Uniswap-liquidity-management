@@ -96,6 +96,8 @@ if __name__ == '__main__':
 
         price_records, swap_records, reserve_alpha, reserve_beta, fee_alpha, fee_beta, token_wealth, fee_wealth = [initial_price], [''], [initial_reserve['alpha']], [initial_reserve['beta']], [Dec(0.)], [Dec(0.)], [initial_reserve['alpha'] + initial_reserve['beta'] * initial_price], [Dec(0.)]
         epoc_swap_begin_index, epoc_invest_price, epoc_invest_price_high, epoc_invest_price_low, epoc_invest_alpha, epoc_invest_beta, epoc_swap_end_index, epoc_end_price, epoc_end_alpha_pool, epoc_end_beta_pool, epoc_end_alpha_fee, epoc_end_beta_fee, epoc_begin_wealth, epoc_end_wealth = [Dec(0)], [initial_price], [test_user['range_order'].price_high], [test_user['range_order'].price_low], [initial_reserve['alpha']], [initial_reserve['beta']], [], [], [], [], [], [], [test_user['range_order'].wealth], []
+        effective_tx_count_ls = []
+        effective_tx_count = 0
 
         total_swap_times = 150000
         for swap_times in range(total_swap_times):
@@ -121,6 +123,8 @@ if __name__ == '__main__':
                 fee_beta.append(test_user['range_order'].transaction_fee.beta)
                 token_wealth.append(test_user['range_order'].wealth)
                 fee_wealth.append(test_user['range_order'].transaction_fee.alpha + used_price_series.current_price * test_user['range_order'].transaction_fee.beta)
+                if (fee_alpha[-1] - fee_alpha[-2]) > 0.00001 or (fee_beta[-1] - fee_beta[-2]) > 0.00001:
+                    effective_tx_count += 1
             else:
                 swap_records.append('rebase')
 
@@ -132,6 +136,8 @@ if __name__ == '__main__':
                 epoc_end_beta_pool.append(test_user["range_order"].reserve.beta)
                 epoc_end_beta_fee.append(test_user['range_order'].transaction_fee.beta)
                 epoc_end_price.append(used_price_series.current_price)
+                effective_tx_count_ls.append(effective_tx_count)
+                effective_tx_count = 0
 
                 initial_price = used_price_series.current_price
                 test_user = {
@@ -166,6 +172,7 @@ if __name__ == '__main__':
         epoc_end_beta_pool.append(test_user["range_order"].reserve.beta)
         epoc_end_beta_fee.append(test_user['range_order'].transaction_fee.beta)
         epoc_end_price.append(used_price_series.current_price)
+        effective_tx_count_ls.append(effective_tx_count)
 
 
         transaction_records = PD.DataFrame({
@@ -194,7 +201,8 @@ if __name__ == '__main__':
             'epoc_end_beta_pool': epoc_end_beta_pool,
             'epoc_end_alpha_fee': epoc_end_alpha_fee,
             'epoc_end_beta_fee': epoc_end_beta_fee,
-            'epoc_end_price': epoc_end_price
+            'epoc_end_price': epoc_end_price,
+            'epoc_effective_tx_count': effective_tx_count_ls
         })
         epoc_records['invest_wealth'] = epoc_records['epoc_invest_alpha'] + epoc_records['epoc_invest_beta'] * epoc_records['epoc_invest_price']
         epoc_records['end_wealth_in_pool'] = epoc_records['epoc_end_alpha_pool'] + epoc_records['epoc_end_beta_pool'] * epoc_records['epoc_end_price']
