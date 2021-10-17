@@ -72,7 +72,7 @@ class RangeOrder:
         then beta is withdrawn
         '''
         if new_price < old_price:
-            if old_price <= self.price_low:
+            if not (self.price_low < old_price < self.price_high):
                 return Swap(alpha=Dec(0.))
             new_price = max(new_price, self.price_low)
             swap_alpha = self.reserve.alpha * (Dec(1.) / Dec.sqrt(new_price) - Dec(1.) / Dec.sqrt(old_price)) / (Dec(1.) / Dec.sqrt(self.price_low) - Dec(1.) / Dec.sqrt(self.price_high))
@@ -80,7 +80,7 @@ class RangeOrder:
             swap_alpha = max(swap_alpha, Dec(0.))
             return Swap(alpha=swap_alpha)
         else:
-            if old_price >= self.price_high:
+            if not (self.price_low < old_price < self.price_high):
                 return Swap(beta=Dec(0.))
             new_price = min(new_price, self.price_high)
             swap_beta = self.reserve.beta * (Dec.sqrt(new_price) - Dec.sqrt(old_price)) / (Dec.sqrt(self.price_high) - Dec.sqrt(self.price_low))

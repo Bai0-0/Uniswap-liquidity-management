@@ -58,9 +58,10 @@ if __name__ == '__main__':
     if not os.path.exists(store_path):
         os.mkdir(store_path)
 
-    test_price_series = PriceSeries(0, 4e-3)
+    # test_price_series = PriceSeries(0, 4e-3)
 
-    price_records = [float(test_price_series.generate_next_price()[0]) for _ in range(5000)]
+    # price_records = [float(test_price_series.generate_next_price()[0]) for _ in range(5000)]
+    price_records = PD.read_csv("simulation_price.csv")['price'][:5000]
     print(KP.cal_moment(price_records))
     print(KP.cal_psi(price_records))
     result_psi = KP.cal_psi(price_records)
@@ -79,7 +80,7 @@ if __name__ == '__main__':
         deposit_alpha = Dec(10.)
         test_user = {
             'strategy': Strategy(initial_price * NP.exp(-b), initial_price * NP.exp(b)),
-            'reserves': VC.TokenInfo(deposit_alpha, Dec(0)),
+            'reserves': VC.TokenInfo(deposit_alpha, deposit_alpha / initial_price),
             'range_order': VC.RangeOrder(initial_price, initial_price * Dec.exp(-a), initial_price * Dec.exp(a))
         }
         test_user['range_order'].fix_alpha(test_user['reserves'].alpha)
@@ -142,7 +143,7 @@ if __name__ == '__main__':
                 initial_price = used_price_series.current_price
                 test_user = {
                     'strategy': Strategy(initial_price * Dec.exp(-b), initial_price * Dec.exp(b)),
-                    'reserves': VC.TokenInfo(deposit_alpha, Dec(0)),
+                    'reserves': VC.TokenInfo(deposit_alpha, deposit_alpha / initial_price),
                     'range_order': VC.RangeOrder(initial_price, initial_price * Dec.exp(-a), initial_price * Dec.exp(a))
                 }
                 test_user['range_order'].fix_alpha(test_user['reserves'].alpha)
