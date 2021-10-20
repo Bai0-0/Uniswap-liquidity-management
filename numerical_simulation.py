@@ -61,7 +61,7 @@ if __name__ == '__main__':
     # test_price_series = PriceSeries(0, 4e-3)
 
     # price_records = [float(test_price_series.generate_next_price()[0]) for _ in range(5000)]
-    price_records = PD.read_csv("simulation_price.csv")['price'][:5000]
+    price_records = PD.read_csv("simulation_price.csv")['price'][:5000000]
     print(KP.cal_moment(price_records))
     print(KP.cal_psi(price_records))
     result_psi = KP.cal_psi(price_records)
@@ -72,7 +72,8 @@ if __name__ == '__main__':
         raise Exception
     a, b = Dec(0.01), Dec(result_b)
     # try:
-    for b in [Dec(0.2), Dec(0.4), Dec(0.6), Dec(0.8), Dec(1.0), Dec(result_b)]:
+    for b in [Dec(0.2), Dec(0.4), Dec(0.6), Dec(0.8), Dec(1.0), 
+              Dec(1.2), Dec(1.4), Dec(1.6), Dec(1.8), Dec(2.0), Dec(result_b)]:
         used_price_series = UsedPriceSeries(PD.read_csv('simulation_price.csv')['price'].values)
 
         initial_price = used_price_series.current_price
@@ -100,7 +101,7 @@ if __name__ == '__main__':
         effective_tx_count_ls = []
         effective_tx_count = 0
 
-        total_swap_times = 150000
+        total_swap_times = 2000000
         for swap_times in range(total_swap_times):
             # update current price to range order
             test_user['range_order'].current_price = used_price_series.current_price
