@@ -62,12 +62,14 @@ def initialize_pool_info(pool_info_path: str) -> PriceSeries:
     :return: PriceSeries and SwapSeries
     '''
     # pool_info_path = 'LINK_WETH_3000_0815.csv'
-    pool_info = PD.read_csv(f'../data/after_preprocessing/{pool_info_path}')
+    pool_info = PD.read_csv(f'after_preprocessing/{pool_info_path}')
     swap_info = pool_info.loc[pool_info['event_name'] == 'Swap'].reset_index(drop=True)
     swap_info = swap_info.drop(index=[0, 1]).reset_index(drop=True)
-    abstract_info = swap_info[['liquidity', 'amount0_delta', 'amount1_delta', 'p_real']]
-    price_series = PriceSeries(price_series=NP.array([Dec(1.) / Dec(_) for _ in abstract_info['p_real'].values]))
-    return price_series
+    # abstract_info = swap_info[['liquidity', 'amount0_delta', 'amount1_delta', 'p_real']]
+    swap_info['p_real'] = swap_info['p_real']
+    price_series = PriceSeries(price_series=NP.array([Dec(1.) / Dec(_) for _ in swap_info['p_real'].values]))
+    time_series = swap_info["timeStamp"]
+    return price_series, time_series
     # initialize swap series
     # swap_list = []
     # for swap_index in range(len(abstract_info)):
@@ -87,10 +89,21 @@ def initialize_pool_info(pool_info_path: str) -> PriceSeries:
 def generate_transaction_records(pool_info_path, a: Dec, default_b: Dec=None, deposit_alpha=Dec(100.), steps=None):
     # pool_info_path = single_pool_info
     fee_rate = int(pool_info_path.split('_')[2]) / 1e6
-    test_price_series = initialize_pool_info(pool_info_path)
+    test_price_series, test_time_series = initialize_pool_info(pool_info_path)
     price_cache = PriceCache()
     if steps == None:
         steps = len(test_price_series.price_series) - 1
+
+    price_cache_init_times = 0
+    for swap_times in range(steps):
+        # update current price to range order
+        if len(price_cache) < 100:
+            test_price_series.generate_next_price()
+            price_cache.update(test_price_series.current_price)
+            price_cache_init_times += 1
+            continue
+    # price_cache_init_times -= 1
+
     initial_price = test_price_series.current_price
     price_cache.update(initial_price)
     test_user = {
@@ -103,16 +116,14 @@ def generate_transaction_records(pool_info_path, a: Dec, default_b: Dec=None, de
         'alpha': test_user['range_order'].reserve.alpha,
         'beta': test_user['range_order'].reserve.beta
     }
-
     price_records, swap_records, reserve_alpha, reserve_beta, fee_alpha, fee_beta, token_wealth, fee_wealth, wealth_hold = [initial_price], [''], [initial_reserve['alpha']], [initial_reserve['beta']], [Dec(0.)], [Dec(0.)], [initial_reserve['alpha'] + initial_reserve['beta'] * initial_price], [Dec(0.)], [initial_reserve['alpha'] + initial_reserve['beta'] * initial_price]
     epoc_swap_begin_index, epoc_invest_price, epoc_invest_price_high, epoc_invest_price_low, epoc_invest_alpha, epoc_invest_beta, epoc_swap_end_index, epoc_end_price, epoc_end_alpha_pool, epoc_end_beta_pool, epoc_end_alpha_fee, epoc_end_beta_fee, epoc_begin_wealth, epoc_end_wealth = [Dec(0)], [initial_price], [test_user['range_order'].price_high], [test_user['range_order'].price_low], [initial_reserve['alpha']], [initial_reserve['beta']], [], [], [], [], [], [], [test_user['range_order'].wealth], []
+    epoc_begin_ts, epoc_end_ts = [test_time_series[0]], []
+    effective_tx_count_ls = []
+    effective_tx_count = 0
 
-    for swap_times in range(steps):
+    for swap_times in range(steps - price_cache_init_times):
         # update current price to range order
-        if len(price_cache) < 100:
-            test_price_series.generate_next_price()
-            price_cache.update(test_price_series.current_price)
-            continue
         result_psi = cal_psi(price_cache, fee_rate)
         if default_b == None:
             if result_psi > 0.5:
@@ -146,17 +157,22 @@ def generate_transaction_records(pool_info_path, a: Dec, default_b: Dec=None, de
             token_wealth.append(test_user['range_order'].wealth)
             fee_wealth.append(test_user['range_order'].transaction_fee.alpha + test_price_series.current_price * test_user['range_order'].transaction_fee.beta)
             wealth_hold.append(initial_reserve['alpha'] + initial_reserve['beta'] * test_price_series.current_price)
+            if (fee_alpha[-1] - fee_alpha[-2]) > 0.00001 or (fee_beta[-1] - fee_beta[-2]) > 0.00001:
+                effective_tx_count += 1
         else:
             swap_records.append('rebase')
 
-            # print(f'Rebase! Swap time {swap_times}\n------------------\n')
+            print(f'Rebase! Swap time {swap_times}\n------------------\n')
 
-            epoc_swap_end_index.append(swap_times)
+            epoc_swap_end_index.append(swap_times + 1)
+            epoc_end_ts.append(test_time_series[swap_times + price_cache_init_times + 1])
             epoc_end_alpha_pool.append(test_user["range_order"].reserve.alpha)
             epoc_end_alpha_fee.append(test_user['range_order'].transaction_fee.alpha)
             epoc_end_beta_pool.append(test_user["range_order"].reserve.beta)
             epoc_end_beta_fee.append(test_user['range_order'].transaction_fee.beta)
             epoc_end_price.append(test_price_series.current_price)
+            effective_tx_count_ls.append(effective_tx_count)
+            effective_tx_count = 0
 
             initial_price = test_price_series.current_price
             if default_b == None:
@@ -178,6 +194,7 @@ def generate_transaction_records(pool_info_path, a: Dec, default_b: Dec=None, de
                 'beta': test_user['range_order'].reserve.beta
             }
             epoc_swap_begin_index.append(swap_times + 1)
+            epoc_begin_ts.append(test_time_series[swap_times + 1 + price_cache_init_times])
             epoc_invest_alpha.append(test_user["range_order"].reserve.alpha)
             epoc_invest_beta.append(test_user['range_order'].reserve.beta)
             epoc_invest_price.append(test_price_series.current_price)
@@ -193,13 +210,15 @@ def generate_transaction_records(pool_info_path, a: Dec, default_b: Dec=None, de
             fee_wealth.append(test_user['range_order'].transaction_fee.alpha + test_price_series.current_price * test_user['range_order'].transaction_fee.beta)
             wealth_hold.append(initial_reserve['alpha'] + initial_reserve['beta'] * test_price_series.current_price)
 
-    epoc_swap_end_index.append(steps + 1)
+    epoc_swap_end_index.append(steps - price_cache_init_times)
+    epoc_end_ts.append(test_time_series[steps])
     epoc_end_alpha_pool.append(test_user["range_order"].reserve.alpha)
     epoc_end_alpha_fee.append(test_user['range_order'].transaction_fee.alpha)
     epoc_end_beta_pool.append(test_user["range_order"].reserve.beta)
     epoc_end_beta_fee.append(test_user['range_order'].transaction_fee.beta)
     epoc_end_price.append(test_price_series.current_price)
     price_cache.update(test_price_series.current_price)
+    effective_tx_count_ls.append(effective_tx_count)
 
     transaction_records = PD.DataFrame({
         'swap_index': [_ for _ in range(len(price_records))],
@@ -218,7 +237,9 @@ def generate_transaction_records(pool_info_path, a: Dec, default_b: Dec=None, de
 
     epoc_records = PD.DataFrame({
         'epoc_begin_index': epoc_swap_begin_index,
+        'epoc_begin_timestamp': epoc_begin_ts,
         'epoc_end_index': epoc_swap_end_index,
+        'epoc_end_timestamp': epoc_end_ts,
         'epoc_invest_alpha': epoc_invest_alpha,
         'epoc_invest_beta': epoc_invest_beta,
         'epoc_invest_price_high': epoc_invest_price_high,
@@ -228,7 +249,8 @@ def generate_transaction_records(pool_info_path, a: Dec, default_b: Dec=None, de
         'epoc_end_beta_pool': epoc_end_beta_pool,
         'epoc_end_alpha_fee': epoc_end_alpha_fee,
         'epoc_end_beta_fee': epoc_end_beta_fee,
-        'epoc_end_price': epoc_end_price
+        'epoc_end_price': epoc_end_price,
+        'epoc_effective_tx_count': effective_tx_count_ls
     })
     epoc_records['invest_wealth'] = epoc_records['epoc_invest_alpha'] + epoc_records['epoc_invest_beta'] * epoc_records['epoc_invest_price']
     epoc_records['end_wealth_in_pool'] = epoc_records['epoc_end_alpha_pool'] + epoc_records['epoc_end_beta_pool'] * epoc_records['epoc_end_price']
@@ -237,31 +259,32 @@ def generate_transaction_records(pool_info_path, a: Dec, default_b: Dec=None, de
     epoc_records['holding_wealth'] = epoc_records['epoc_invest_alpha'] + epoc_records['epoc_invest_beta'] * epoc_records['epoc_end_price']
     return transaction_records, epoc_records
 
-total_pool_info = PD.read_csv("para_result.csv")
-for single_index in range(len(total_pool_info)):
+# total_pool_info = PD.read_csv("para_result.csv")
+for pool in sorted(os.listdir("after_preprocessing")):
+    if ".csv" in pool:
     # single_index = 9
-    single_pool_info = total_pool_info.loc[single_index, 'Pool']
-    print(f'Processing {single_index} {single_pool_info}')
-    fee_rate = int(single_pool_info.split('_')[2]) / 1e6
+        single_pool_info = pool
+        print(f'Processing {pool}')
+        fee_rate = int(pool.split('_')[2]) / 1e6
 
-    root_folder = 'pool_detail'
-    a, b = Dec(0.01), Dec(0.15)
-    folder_name = single_pool_info[: -4]
-    saved_path = root_folder + '/' + folder_name
-    if not os.path.exists(saved_path):
-        os.mkdir(saved_path)
+        root_folder = 'pool_detail'
+        a, b = Dec(0.01), Dec(0.15)
+        folder_name = single_pool_info[: -4]
+        saved_path = root_folder + '/' + folder_name
+        if not os.path.exists(saved_path):
+            os.mkdir(saved_path)
 
-    # transaction_records, epoc_records = generate_transaction_records(pool_info_path, a=a, default_b=Dec(0.15))
-    for b_index in range(40):
-        # print(f'processing {str(round((b_index + 1) * 0.05, 2))}')
-        new_b = Dec((b_index + 1) * 0.05)
-        file_name = str(round((b_index + 1) * 0.05, 2)).replace('.', '_')
-        transaction_records, epoc_records = generate_transaction_records(single_pool_info, a=a, default_b=new_b)
-        transaction_records.to_csv(f'{saved_path}/{file_name}_transaction.csv')
-        epoc_records.to_csv(f'{saved_path}/{file_name}_epoc.csv')
-    transaction_records, epoc_records = generate_transaction_records(single_pool_info, a=a)
-    transaction_records.to_csv(f'{saved_path}/optimum_transaction.csv')
-    epoc_records.to_csv(f'{saved_path}/optimum_epoc.csv')
+        # transaction_records, epoc_records = generate_transaction_records(pool_info_path, a=a, default_b=Dec(0.15))
+        for b_index in range(40):
+            # print(f'processing {str(round((b_index + 1) * 0.05, 2))}')
+            new_b = Dec((b_index + 1) * 0.05)
+            file_name = str(round((b_index + 1) * 0.05, 2)).replace('.', '_')
+            transaction_records, epoc_records = generate_transaction_records(single_pool_info, a=a, default_b=new_b)
+            transaction_records.to_csv(f'{saved_path}/{file_name}_transaction.csv')
+            epoc_records.to_csv(f'{saved_path}/{file_name}_epoc.csv')
+        transaction_records, epoc_records = generate_transaction_records(single_pool_info, a=a)
+        transaction_records.to_csv(f'{saved_path}/optimum_transaction.csv')
+        epoc_records.to_csv(f'{saved_path}/optimum_epoc.csv')
 
 # import matplotlib
 # matplotlib.use('TkAgg')
