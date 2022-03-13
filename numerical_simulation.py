@@ -199,17 +199,21 @@ if __name__ == '__main__':
                 #finish of swap 
                 final_profit.append(sum(fee_wealth)-total_gas)
                 
+                
         #Finish one rebase_cost search
-        optim_a.append(a_grid[(NP.argmax(final_profit)+1)//len(a_grid) -1 ])
-        optim_b.append( b_grid[(NP.argmax(final_profit)+1)%len(a_grid) -1] )
+        optim_a.append(a_grid[(NP.argmax(final_profit)-1)//len(a_grid) -1 ])
+        optim_b.append( b_grid[(NP.argmax(final_profit)-1)%len(b_grid) -1])
     
     #Finish of all rebase_cost search
-    
-    print(final_profit)
-    plt.plot(rebase_grid,optim_a)
-    plt.xlabel('gas_cost', fontsize=12)
-    plt.ylabel('optimal range', fontsize=12)
+ # %%   
+    #print(final_profit)
+    plt.plot(final_profit[60:80])
+    plt.xlabel('break-out interval index', fontsize=12)
+    plt.ylabel('profit', fontsize=12)
+    plt.title("gas price=1")
     plt.show()
+
+
 
                     
             #         epoc_swap_begin_index.append(swap_times + 1)
