@@ -61,7 +61,7 @@ class Strategy:
 # %%
 if __name__ == '__main__':
 
-    N_price = 200000
+    N_price = 2000
 
     test_var = 4e-3
 
@@ -84,32 +84,39 @@ if __name__ == '__main__':
     #     price_records.append(float(test_price_series.generate_next_price()[0]))
     # # price_records = [float(test_price_series.generate_next_price()[0])
     # #                 for _ in range(N_price)]
-    rebase_grid= NP.arange(1,6,1)
+    rebase_grid= NP.arange(0.2,1,0.5)
 
     # %%
     # a:range order size , b:breakout interval size ,assume symmetric
     # a, b = Dec(10*test_var), Dec(100*test_var)
     # try: 
-    final_profit,optim_a,optim_b = [ ],[],[]
-    a_grid = NP.arange(2*test_var, 10*test_var,2*test_var)
-    b_grid = NP.arange(4*test_var,21*test_var,4*test_var)
+    APR,reset_times, total_reset_cost,  total_swap_fees, optim_a,optim_b =[], [], [ ],[ ], [ ],[ ]
+    total_swap_times = 100 #15000 times
+    total_pnl,total_cum_pnl, total_wealth_change=PD.DataFrame(NP.zeros(total_swap_times-1)),PD.DataFrame(NP.zeros(total_swap_times-2)), PD.DataFrame(NP.zeros(total_swap_times-1))
+
+
+    a_grid = NP.arange(0.5*test_var, 1*test_var,0.5*test_var)
+    b_grid = NP.arange(1*test_var,3*test_var,1*test_var)
 
     for rebase_cost in rebase_grid :
         for a in a_grid:
 
+            print("processing gas cost :",rebase_cost)
             print("processing a :", a)
+            
                 
             for b in b_grid:
+                print("processing b:", b)
 
-                total_gas = 0
+                
             
 
                 used_price_series = UsedPriceSeries(PD.read_csv('simulation_price.csv')['price'].values)
                 #used_price_series = UsedPriceSeries(price_records)
 
                 initial_price = used_price_series.current_price
-                print('Processing b :', b)
-                deposit_alpha = Dec(10.)
+                
+                deposit_alpha = Dec(50.)
                 test_user = {
                     'strategy': Strategy(initial_price * Dec(NP.exp(-b)), initial_price * Dec(NP.exp(b))),
                     'reserves': VC.TokenInfo(deposit_alpha, Dec(0)),
@@ -124,16 +131,22 @@ if __name__ == '__main__':
                     'alpha': range_order.reserve.alpha,
                     'beta': range_order.reserve.beta
                 }
-                #print(initial_reserve)
 
 
-                price_records, swap_records, reserve_alpha, reserve_beta, fee_alpha, fee_beta, token_wealth, fee_wealth = [initial_price], [''], [
+                reset_record, cum_pnl, pnl, wealth_change, price_records, swap_records, reserve_alpha, reserve_beta, fee_alpha, fee_beta, token_wealth, fee_wealth =[], [], [],[],  [initial_price], [''], [
                     initial_reserve['alpha']], [initial_reserve['beta']], [Dec(0.)], [Dec(0.)], [initial_reserve['alpha'] + initial_reserve['beta'] * initial_price], [Dec(0.)]
                 epoc_swap_begin_index, epoc_invest_price, epoc_invest_price_high, epoc_invest_price_low, epoc_invest_alpha, epoc_invest_beta, epoc_swap_end_index, epoc_end_price, epoc_end_alpha_pool, epoc_end_beta_pool, epoc_end_alpha_fee, epoc_end_beta_fee, epoc_begin_wealth, epoc_end_wealth = [
                     Dec(0)], [initial_price], [test_user['range_order'].price_high], [test_user['range_order'].price_low], [initial_reserve['alpha']], [initial_reserve['beta']], [], [], [], [], [], [], [test_user['range_order'].wealth], []
 
-                total_swap_times = 15000 #15000 times
+                
+                
+                #initialize variable
+                reset=0  #number of reset price interval
+                total_gas = 0
+
                 for swap_times in range(total_swap_times):
+                    
+
                     # update current price to range order
                     test_user['range_order'].current_price = used_price_series.current_price
                     old_price = test_user['range_order'].current_price
@@ -142,21 +155,27 @@ if __name__ == '__main__':
 
                     one_swap = test_user['range_order'].cal_swap(old_price, new_price)
                     
-                    # if one_swap.alpha == None:
-                    #     swap_info = f'beta {one_swap.beta}'
-                    # else:
-                    #     swap_info = f'alpha {one_swap.alpha}'
-                    # price_records.append(used_price_series.current_price)
+                    if one_swap.alpha == None:
+                        swap_info = f'beta {one_swap.beta}'
+                    else:
+                        swap_info = f'alpha {one_swap.alpha}'
+
+                    
+                    #price_records.append(used_price_series.current_price)
                     
 
                     test_user['range_order'].meet_swap(one_swap)
-                    #swap_records.append(swap_info)
+
+                    swap_records.append(swap_info)
                     reserve_alpha.append(test_user["range_order"].reserve.alpha)
                     reserve_beta.append(test_user["range_order"].reserve.beta)
+
                     fee_alpha.append(
                         test_user['range_order'].transaction_fee.alpha)
                     fee_beta.append(test_user['range_order'].transaction_fee.beta)
                     token_wealth.append(test_user['range_order'].wealth)
+
+                
                     fee_wealth.append(test_user['range_order'].transaction_fee.alpha +
                                     used_price_series.current_price * test_user['range_order'].transaction_fee.beta)
 
@@ -164,9 +183,14 @@ if __name__ == '__main__':
                     
                     if not(test_user['strategy'].signal(used_price_series.current_price)):
 
-                        total_gas+=rebase_cost
+                        #cost include: mint and burn,
+
+                        total_gas+=rebase_cost*2
+                        reset+=1
+                        reset_info=f'reset when swap time:{swap_times}'
+                        reset_record.append(reset_info)
                         
-                        swap_records.append('rebase')
+                        #swap_records.append('rebase')
 
                         
                         # print(
@@ -183,6 +207,7 @@ if __name__ == '__main__':
                         #     test_user['range_order'].transaction_fee.beta)
                         # epoc_end_price.append(used_price_series.current_price)
                         
+                        
                         #reset range order and break-out interval
                         initial_price = used_price_series.current_price
                         test_user = {
@@ -190,24 +215,54 @@ if __name__ == '__main__':
                             'reserves': VC.TokenInfo(reserve_alpha[-1], Dec(0)),
                             'range_order': VC.RangeOrder(initial_price, initial_price * Dec(NP.exp(-a)), initial_price * Dec(NP.exp(a)))
                         }
+                        #reserve_alpha[-1],指用之前池子里面剩下的alpha token
+
                         test_user['range_order'].fix_alpha(test_user['reserves'].alpha)
                         range_order = test_user['range_order']
                         initial_reserve = {
                             'alpha': range_order.reserve.alpha,
                             'beta': range_order.reserve.beta
                         }
+
+                    #finish of one swap
+                    if not(swap_times ==0):
+                    
+                        pnl.append(token_wealth[-1]-token_wealth[-2] + fee_wealth[-1]- Dec(total_gas))
+                        wealth_change=NP.diff(token_wealth)
+
+                    if len(pnl)>1:
+                        #ensure pnl has at least 2 number
+                    
+                        cum_pnl.append(pnl[-1]+pnl[-2])
+
+
                 #finish of swap 
-                final_profit.append(sum(fee_wealth)-total_gas)
+                reset_times.append(reset)
+                pnl=PD.DataFrame(pnl)
+                total_pnl=PD.concat([total_pnl,pnl],axis=1)
+                
+                cum_pnl=PD.DataFrame(cum_pnl)
+                total_cum_pnl=PD.concat([total_cum_pnl,cum_pnl],axis=1)
+                total_reset_cost.append(total_gas)
+                total_swap_fees.append(sum(fee_wealth))
+                wealth_change=PD.DataFrame(wealth_change)
+                total_wealth_change=PD.concat([total_wealth_change,wealth_change],axis=1)
+                APR.append(pnl.iloc[:,0]/token_wealth[0:len(token_wealth)-2])
+
+                
+                
+
                 
                 
         #Finish one rebase_cost search
-        optim_a.append(a_grid[(NP.argmax(final_profit)-1)//len(a_grid) -1 ])
-        optim_b.append( b_grid[(NP.argmax(final_profit)-1)%len(b_grid) -1])
+        #optim_a.append(a_grid[(NP.argmax(pnl)-1)//len(a_grid) -1 ])
+        #optim_b.append( b_grid[(NP.argmax(pnl)-1)%len(b_grid) -1])
     
     #Finish of all rebase_cost search
+    
  # %%   
     #print(final_profit)
-    plt.plot(final_profit[60:80])
+    plt.plot(pnl[60:80])
     plt.xlabel('break-out interval index', fontsize=12)
     plt.ylabel('profit', fontsize=12)
     plt.title("gas price=1")
