@@ -92,6 +92,7 @@ if __name__ == '__main__':
     # try: 
     APR,reset_times, total_reset_cost,  total_swap_fees, optim_a,optim_b =[], [], [ ],[ ], [ ],[ ]
     total_swap_times = 100 #15000 times
+    reserve_alpha_info=PD.DataFrame(NP.zeros(total_swap_times))
     total_pnl,total_cum_pnl, total_wealth_change=PD.DataFrame(NP.zeros(total_swap_times-1)),PD.DataFrame(NP.zeros(total_swap_times-2)), PD.DataFrame(NP.zeros(total_swap_times-1))
 
 
@@ -116,7 +117,7 @@ if __name__ == '__main__':
 
                 initial_price = used_price_series.current_price
                 
-                deposit_alpha = Dec(50.)
+                deposit_alpha = Dec(10.)
                 test_user = {
                     'strategy': Strategy(initial_price * Dec(NP.exp(-b)), initial_price * Dec(NP.exp(b))),
                     'reserves': VC.TokenInfo(deposit_alpha, Dec(0)),
@@ -207,7 +208,7 @@ if __name__ == '__main__':
                         #     test_user['range_order'].transaction_fee.beta)
                         # epoc_end_price.append(used_price_series.current_price)
                         
-                        
+
                         #reset range order and break-out interval
                         initial_price = used_price_series.current_price
                         test_user = {
@@ -247,7 +248,10 @@ if __name__ == '__main__':
                 total_swap_fees.append(sum(fee_wealth))
                 wealth_change=PD.DataFrame(wealth_change)
                 total_wealth_change=PD.concat([total_wealth_change,wealth_change],axis=1)
-                APR.append(pnl.iloc[:,0]/token_wealth[0:len(token_wealth)-2])
+
+                reserve_alpha=PD.DataFrame(reserve_alpha)
+                reserve_alpha_info=PD.concat([reserve_alpha_info,reserve_alpha],axis=1)
+                #APR.append(pnl.iloc[:,0]/token_wealth[0:len(token_wealth)-2])
 
                 
                 
