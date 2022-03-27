@@ -77,27 +77,22 @@ if __name__ == '__main__':
         os.mkdir(store_path)
 
     
-    #test_price_series = PriceSeries(2000, test_var)
-    #N_price = 1000
-    # price_records = []
-    # for i in range(N_price):
-    #     price_records.append(float(test_price_series.generate_next_price()[0]))
-    # # price_records = [float(test_price_series.generate_next_price()[0])
-    # #                 for _ in range(N_price)]
-    rebase_grid= NP.arange(0.2,1,0.5)
+    
 
     # %%
     # a:range order size , b:breakout interval size ,assume symmetric
     # a, b = Dec(10*test_var), Dec(100*test_var)
-    # try: 
+
+    rebase_grid= NP.arange(0.2,1,1)
     APR,reset_times, total_reset_cost,  total_swap_fees, optim_a,optim_b =[], [], [ ],[ ], [ ],[ ]
     total_swap_times = 100 #15000 times
-    reserve_alpha_info=PD.DataFrame(NP.zeros(total_swap_times))
+    reserve_alpha_info, out_record=PD.DataFrame(NP.zeros(total_swap_times)),PD.DataFrame(NP.zeros(total_swap_times))
     total_pnl,total_cum_pnl, total_wealth_change=PD.DataFrame(NP.zeros(total_swap_times-1)),PD.DataFrame(NP.zeros(total_swap_times-2)), PD.DataFrame(NP.zeros(total_swap_times-1))
-
-
-    a_grid = NP.arange(0.5*test_var, 1*test_var,0.5*test_var)
-    b_grid = NP.arange(1*test_var,3*test_var,1*test_var)
+    
+    a_grid = NP.arange(0.5*test_var, 10*test_var,1*test_var)
+    #a_grid = [0.5*test_var,5*test_var]
+    b_grid = NP.arange(1*test_var,15*test_var,4*test_var)
+    #b_grid=[10*test_var]
 
     for rebase_cost in rebase_grid :
         for a in a_grid:
@@ -108,9 +103,7 @@ if __name__ == '__main__':
                 
             for b in b_grid:
                 print("processing b:", b)
-
-                
-            
+   
 
                 used_price_series = UsedPriceSeries(PD.read_csv('simulation_price.csv')['price'].values)
                 #used_price_series = UsedPriceSeries(price_records)
@@ -134,7 +127,7 @@ if __name__ == '__main__':
                 }
 
 
-                reset_record, cum_pnl, pnl, wealth_change, price_records, swap_records, reserve_alpha, reserve_beta, fee_alpha, fee_beta, token_wealth, fee_wealth =[], [], [],[],  [initial_price], [''], [
+                out_info, reset_record, cum_pnl, pnl, wealth_change, price_records, swap_records, reserve_alpha, reserve_beta, fee_alpha, fee_beta, token_wealth, fee_wealth =[None]*total_swap_times, [], [], [],[],  [initial_price], [''], [
                     initial_reserve['alpha']], [initial_reserve['beta']], [Dec(0.)], [Dec(0.)], [initial_reserve['alpha'] + initial_reserve['beta'] * initial_price], [Dec(0.)]
                 epoc_swap_begin_index, epoc_invest_price, epoc_invest_price_high, epoc_invest_price_low, epoc_invest_alpha, epoc_invest_beta, epoc_swap_end_index, epoc_end_price, epoc_end_alpha_pool, epoc_end_beta_pool, epoc_end_alpha_fee, epoc_end_beta_fee, epoc_begin_wealth, epoc_end_wealth = [
                     Dec(0)], [initial_price], [test_user['range_order'].price_high], [test_user['range_order'].price_low], [initial_reserve['alpha']], [initial_reserve['beta']], [], [], [], [], [], [], [test_user['range_order'].wealth], []
@@ -144,6 +137,7 @@ if __name__ == '__main__':
                 #initialize variable
                 reset=0  #number of reset price interval
                 total_gas = 0
+                lower_out,upper_out=0,0
 
                 for swap_times in range(total_swap_times):
                     
@@ -160,6 +154,14 @@ if __name__ == '__main__':
                         swap_info = f'beta {one_swap.beta}'
                     else:
                         swap_info = f'alpha {one_swap.alpha}'
+                    
+                    if one_swap.alpha==0:
+                        lower_out+=1
+                        out_info[swap_times]="lower"
+                    elif one_swap.beta==0:
+                        upper_out+=1
+                        out_info[swap_times]="upper"
+                        
 
                     
                     #price_records.append(used_price_series.current_price)
@@ -238,9 +240,11 @@ if __name__ == '__main__':
 
 
                 #finish of swap 
-                reset_times.append(reset)
+                reset_times.append(reset)  #重置了多少次
                 pnl=PD.DataFrame(pnl)
+            
                 total_pnl=PD.concat([total_pnl,pnl],axis=1)
+                
                 
                 cum_pnl=PD.DataFrame(cum_pnl)
                 total_cum_pnl=PD.concat([total_cum_pnl,cum_pnl],axis=1)
@@ -249,9 +253,13 @@ if __name__ == '__main__':
                 wealth_change=PD.DataFrame(wealth_change)
                 total_wealth_change=PD.concat([total_wealth_change,wealth_change],axis=1)
 
+                out_info=PD.DataFrame(out_info)
+                out_record=PD.concat([out_record,out_info],axis=1)
+
                 reserve_alpha=PD.DataFrame(reserve_alpha)
                 reserve_alpha_info=PD.concat([reserve_alpha_info,reserve_alpha],axis=1)
-                #APR.append(pnl.iloc[:,0]/token_wealth[0:len(token_wealth)-2])
+                APR.append(pnl.iloc[:,0]*100/token_wealth[0:len(token_wealth)-2])
+                #APR=PD.DataFrame.transpose(APR)
 
                 
                 
@@ -263,7 +271,10 @@ if __name__ == '__main__':
         #optim_b.append( b_grid[(NP.argmax(pnl)-1)%len(b_grid) -1])
     
     #Finish of all rebase_cost search
-    
+# %%
+plt.plot(total_wealth_change)  
+plt.plot(reserve_alpha_info)
+
  # %%   
     #print(final_profit)
     plt.plot(pnl[60:80])
